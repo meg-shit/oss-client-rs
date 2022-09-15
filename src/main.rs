@@ -1,9 +1,10 @@
+pub mod config;
 pub mod configure;
 
 use clap::{Command, SubCommand};
-use configure::configure;
+use std::error::Error;
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let matches = Command::new("s3-client-rs")
         .version("1.0")
         .author("chengxuguang. <417914077@qq.com>")
@@ -14,10 +15,11 @@ fn main() {
 
     if let Some(_) = matches.subcommand_matches("configure") {
         println!("configure");
-        configure();
+        config::parser()?;
     } else if let Some(_) = matches.subcommand_matches("cp") {
         println!("cp");
     } else if let Some(_) = matches.subcommand_matches("sync") {
         println!("sync");
     }
+    Ok(())
 }

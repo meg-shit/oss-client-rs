@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 aws-sdk-s3 = {version = "0.18.0"}
 clap = {version = "3.2.20"}
+configparser = {version = "3.0.2"}
