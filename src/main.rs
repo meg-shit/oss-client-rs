@@ -1,3 +1,5 @@
+#![allow(unused_must_use)]
+#![allow(unused)]
 pub mod config;
 pub mod configure;
 
@@ -14,8 +16,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .get_matches();
 
     if let Some(_) = matches.subcommand_matches("configure") {
-        println!("configure");
-        config::parser()?;
+        config::parser(true)?;
     } else if let Some(_) = matches.subcommand_matches("cp") {
         println!("cp");
     } else if let Some(_) = matches.subcommand_matches("sync") {
