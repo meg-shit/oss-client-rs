@@ -10,10 +10,10 @@ use std::{
 
 #[derive(Debug)]
 pub struct Config {
-    aws_access_key_id: String,
-    aws_secret_access_key: String,
-    region: String,
-    endpoint: String,
+    pub aws_access_key_id: String,
+    pub aws_secret_access_key: String,
+    pub region: String,
+    pub endpoint: String,
 }
 
 #[allow(deprecated)]
