@@ -16,10 +16,9 @@ pub struct Config {
     pub endpoint: String,
 }
 
-#[allow(deprecated)]
 pub fn parser(set: bool) -> Result<Config, Box<dyn Error>> {
     // 确保配置文件存在
-    let home = env::home_dir().expect("home目录获取失败");
+    let home = home::home_dir().expect("home目录获取失败");
     let config_dir = home.join(".s3");
     let config_file = config_dir.join("credentials");
     if !config_dir.exists() {

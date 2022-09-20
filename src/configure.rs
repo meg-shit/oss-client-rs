@@ -73,7 +73,7 @@ impl ConfigureValue {
 }
 
 pub fn configure() {
-    let config_filename = env::home_dir().unwrap().join(".aws/credentials");
+    let config_filename = home::home_dir().unwrap().join(".aws/credentials");
     let mut value = ConfigureValue::from_file(config_filename.clone());
     let mut temp_str = String::new();
 
