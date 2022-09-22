@@ -8,6 +8,7 @@ use std::error::Error;
 use std::io::{stdout, Write};
 use std::path::{Component, Path};
 use tokio::fs;
+use walkdir::WalkDir;
 
 const MB: u64 = 1024 * 1024;
 const GB: u64 = 1024 * MB;
@@ -52,11 +53,12 @@ pub async fn upload_object(client: &Client, src: &str, target: &str) -> Result<(
     let (bucket, mut key) = path_deal(src, target);
     client
         .put_object()
-        .bucket(bucket)
-        .key(key)
+        .bucket(&bucket)
+        .key(&key)
         .body(ByteStream::from_path(src).await?)
         .send()
         .await?;
+    println!("upload {:#} to s3://{:#}/{:#}", src, bucket, key);
     Ok(())
 }
 
@@ -291,7 +293,7 @@ pub async fn mutl_upload_v2(
                 .part_number(part_number)
                 .build(),
         );
-        upload_size += part_size;
+        upload_size += this_chunk;
         print!(
             "\rCpmpleted {}/{}",
             &get_size_in_nice(upload_size),
@@ -314,6 +316,7 @@ pub async fn mutl_upload_v2(
         .upload_id(upload_id)
         .send()
         .await?;
+    println!("upload {:#} to s3://{:#}/{:#}", src, bucket, key);
     Ok(())
 }
 
@@ -338,6 +341,60 @@ async fn list_object(client: &Client, target: &str) -> Result<(), Box<dyn Error>
             content.key().unwrap().replace(&prefix, ""),
         );
     }
+    Ok(())
+}
+
+pub async fn sync_dir(
+    client: &Client,
+    src_dir: &str,
+    target_dir: &str,
+) -> Result<(), Box<dyn Error>> {
+    for entry in WalkDir::new(src_dir) {
+        match entry {
+            Ok(src) => {
+                if src.path().is_dir() {
+                    continue;
+                }
+                let key = src.path().strip_prefix(src_dir)?;
+                let target_key = Path::new(target_dir).join(key);
+                let src = src.path().as_os_str().to_str().unwrap();
+                let target_key = target_key.as_os_str().to_str().unwrap();
+                let (bucket, key) = parse_s3_url(target_key);
+                let get_object = client.get_object().bucket(&bucket).key(&key).send().await;
+                match get_object {
+                    Ok(obj) => {}
+                    Err(e) => {
+                        upload_file(client, src, target_key).await?;
+                    }
+                }
+            }
+            Err(_) => {}
+        };
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_sync_dir() -> Result<(), Box<dyn Error>> {
+    let client = &create_client();
+    sync_dir(
+        client,
+        "/home/chengxuguang/code/rust/oss-client-rs/target/release",
+        "s3://chengxuguang-bucket/s3-client-test/sync-test",
+    )
+    .await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_obj() -> Result<(), Box<dyn Error>> {
+    let client = &create_client();
+    sync_dir(
+        client,
+        "/home/chengxuguang/code/rust/oss-client-rs",
+        "s3://chengxuguang-bucket/s3-client-test/sync-test/",
+    )
+    .await?;
     Ok(())
 }
 

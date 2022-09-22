@@ -20,7 +20,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .arg(Arg::new("src").required(true))
                 .arg(Arg::new("target").required(true)),
         )
-        .subcommand(SubCommand::with_name("sync").about("sync files"))
+        .subcommand(
+            SubCommand::with_name("sync")
+                .about("sync files")
+                .arg(Arg::new("src_dir").required(true))
+                .arg(Arg::new("target_dir").required(true)),
+        )
         .get_matches();
 
     match matches.subcommand_name() {
@@ -44,7 +49,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let client = s3::create_client();
             s3::upload_file(&client, src, target).await?;
         }
-        Some("sync") => {}
+        Some("sync") => {
+            let src = matches
+                .subcommand()
+                .unwrap()
+                .1
+                .get_one::<String>("src")
+                .unwrap();
+
+            let target = matches
+                .subcommand()
+                .unwrap()
+                .1
+                .get_one::<String>("target")
+                .unwrap();
+            let client = s3::create_client();
+            s3::sync_dir(&client, src, target).await?;
+        }
         _ => {}
     }
     Ok(())
