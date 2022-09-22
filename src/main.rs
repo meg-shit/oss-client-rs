@@ -41,7 +41,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .1
                 .get_one::<String>("target")
                 .unwrap();
-            s3::upload_file(src, target).await?;
+            let client = s3::create_client();
+            s3::upload_file(&client, src, target).await?;
         }
         Some("sync") => {}
         _ => {}
