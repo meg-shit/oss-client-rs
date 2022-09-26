@@ -89,7 +89,7 @@ fn get_value(value: Option<&Option<String>>) -> Option<String> {
 fn overwrite(name: &str, value: Option<&Option<String>>) -> Option<String> {
     let mut _v = get_value(value).unwrap();
     print!("{:?} [{:?}]:", name, _v);
-    stdout().flush();
+    stdout().flush().ok();
     let mut temp_str = String::new();
     stdin().read_line(&mut temp_str).unwrap();
     let new_value = temp_str.trim().to_string();
