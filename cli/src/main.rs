@@ -1,7 +1,7 @@
 #![allow(unused_must_use)]
 #![allow(unused)]
-pub mod config;
-pub mod s3;
+use oss_client_rs_conf::config;
+use oss_client_rs_s3::s3;
 
 use clap::{Arg, Command, SubCommand};
 use std::error::Error;
