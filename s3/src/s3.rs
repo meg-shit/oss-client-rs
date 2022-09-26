@@ -1,12 +1,14 @@
-use oss_client_rs_conf::config;
+#![allow(dead_code)]
+
 use aws_sdk_s3::model::{CompletedMultipartUpload, CompletedPart};
 use aws_sdk_s3::{Client, Config, Credentials, Endpoint, Region};
 use aws_smithy_http::byte_stream::{ByteStream, Length};
 use aws_smithy_types::date_time::Format;
+use oss_client_rs_conf::config;
 use std::collections::HashSet;
 use std::error::Error;
 use std::io::{stdout, Write};
-use std::path::{Path};
+use std::path::Path;
 use walkdir::WalkDir;
 
 const MB: u64 = 1024 * 1024;
@@ -49,7 +51,7 @@ pub async fn upload_file(client: &Client, src: &str, target: &str) -> Result<(),
 }
 
 pub async fn upload_object(client: &Client, src: &str, target: &str) -> Result<(), Box<dyn Error>> {
-    let (bucket, mut key) = path_deal(src, target);
+    let (bucket, key) = path_deal(src, target);
     client
         .put_object()
         .bucket(&bucket)
@@ -62,7 +64,7 @@ pub async fn upload_object(client: &Client, src: &str, target: &str) -> Result<(
 }
 
 pub async fn mutl_upload(client: &Client, src: &str, target: &str) -> Result<(), Box<dyn Error>> {
-    let (bucket, mut key) = path_deal(src, target);
+    let (bucket, key) = path_deal(src, target);
 
     // 创建分片请求
     let upload_id = client
@@ -161,6 +163,7 @@ pub async fn mutl_upload_v2(
     let mut upload_parts: Vec<CompletedPart> = Vec::new();
     let mut part_size: u64 = CHUNK_SIZE;
     let mut upload_id = String::from("");
+    #[allow(unused_assignments)]
     let mut upload_size: u64 = 0;
     // 查看所有分片任务中的part
     for mult_part_upload in list_mult_part_uploads.uploads().unwrap_or_default().iter() {
@@ -245,7 +248,7 @@ pub async fn mutl_upload_v2(
         upload_parts.clear();
     };
     // 确定最终part大小和数量
-    let mut size_of_last_chunk = (file_size % part_size);
+    let mut size_of_last_chunk = file_size % part_size;
     if size_of_last_chunk == 0 {
         size_of_last_chunk = part_size;
         chunk_count -= 1;
@@ -298,7 +301,7 @@ pub async fn mutl_upload_v2(
             &get_size_in_nice(upload_size),
             &total_size
         );
-        stdout().flush();
+        stdout().flush().ok();
     }
     //对upload_parts排序
     upload_parts.sort_by_key(|key| key.part_number());
@@ -361,8 +364,8 @@ pub async fn sync_dir(
                 let (bucket, key) = parse_s3_url(target_key);
                 let get_object = client.get_object().bucket(&bucket).key(&key).send().await;
                 match get_object {
-                    Ok(obj) => {}
-                    Err(e) => {
+                    Ok(_obj) => {}
+                    Err(_e) => {
                         upload_file(client, src, target_key).await?;
                     }
                 }
@@ -457,7 +460,7 @@ async fn test_mult_upload() -> Result<(), Box<dyn Error>> {
 fn test_print_line() {
     for i in 0..10 {
         print!("\r{:?}", i);
-        stdout().flush();
+        stdout().flush().ok();
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 }
