@@ -4,6 +4,7 @@ use aws_sdk_s3::model::{CompletedMultipartUpload, CompletedPart};
 use aws_sdk_s3::{Client, Config, Credentials, Endpoint, Region};
 use aws_smithy_http::byte_stream::{ByteStream, Length};
 use aws_smithy_types::date_time::Format;
+use futures::future::join_all;
 use oss_client_rs_conf::config;
 use std::collections::HashSet;
 use std::error::Error;
@@ -260,6 +261,7 @@ pub async fn mutl_upload_v2(
     }
     upload_size = upload_patrs_num.len() as u64 * part_size;
 
+    let mut futures = vec![];
     for chunk_index in 0..chunk_count {
         let this_chunk = if chunk_count - 1 == chunk_index {
             size_of_last_chunk
@@ -287,22 +289,28 @@ pub async fn mutl_upload_v2(
             .upload_id(&upload_id)
             .body(stream)
             .part_number(part_number)
-            .send()
-            .await?;
-        upload_parts.push(
+            .send();
+
+        let func = |part_number, this_chunk, total_size: String| async move {
+            let res = upload_part_res.await;
             CompletedPart::builder()
-                .e_tag(upload_part_res.e_tag.unwrap_or_default())
+                .e_tag(res.unwrap().e_tag.unwrap_or_default())
                 .part_number(part_number)
-                .build(),
-        );
-        upload_size += this_chunk;
-        print!(
-            "\rCpmpleted {}/{}",
-            &get_size_in_nice(upload_size),
-            &total_size
-        );
-        stdout().flush().ok();
+                .build();
+
+            upload_size += this_chunk;
+            print!(
+                "\rCpmpleted {}/{}",
+                &get_size_in_nice(upload_size),
+                total_size
+            );
+            stdout().flush().ok();
+        };
+        futures.push(func(part_number, this_chunk, total_size.clone()));
     }
+
+    join_all(futures).await;
+
     //对upload_parts排序
     upload_parts.sort_by_key(|key| key.part_number());
     // 生成CompletedMultipartUpload对象
