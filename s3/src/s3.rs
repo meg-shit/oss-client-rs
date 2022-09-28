@@ -298,10 +298,11 @@ pub async fn mutl_upload_v2(
             let res = upload_part_res.await;
 
             {
-                *(_upload_size.lock().unwrap()) += this_chunk;
+                let mut _size = _upload_size.lock().unwrap();
+                *(_size) += this_chunk;
                 print!(
                     "\rCompleted {}/{}",
-                    get_size_in_nice(*(_upload_size.lock().unwrap()) as u64),
+                    get_size_in_nice(*(_size) as u64),
                     total_size
                 );
                 stdout().flush().ok();
@@ -392,30 +393,6 @@ pub async fn sync_dir(
     Ok(())
 }
 
-#[tokio::test]
-async fn test_sync_dir() -> Result<(), Box<dyn Error>> {
-    let client = &create_client();
-    sync_dir(
-        client,
-        "/home/chengxuguang/code/rust/oss-client-rs/target/release",
-        "s3://chengxuguang-bucket/s3-client-test/sync-test",
-    )
-    .await?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_get_obj() -> Result<(), Box<dyn Error>> {
-    let client = &create_client();
-    sync_dir(
-        client,
-        "/home/chengxuguang/code/rust/oss-client-rs",
-        "s3://chengxuguang-bucket/s3-client-test/sync-test/",
-    )
-    .await?;
-    Ok(())
-}
-
 fn path_deal(src: &str, target: &str) -> (String, String) {
     let src_path = Path::new(src);
     if !src_path.exists() {
@@ -460,18 +437,6 @@ fn parse_s3_url_test() {
     assert_eq!(key, "prefix1/prefix2/aaa.txt".to_string());
 }
 
-#[tokio::test]
-async fn test_mult_upload() -> Result<(), Box<dyn Error>> {
-    let client = create_client();
-    mutl_upload_v2(
-        &client,
-        "/home/chengxuguang/code/rust/oss-client-rs/target/release/s3-client-rs",
-        "s3://chengxuguang-bucket/s3-client-test/",
-    )
-    .await?;
-    Ok(())
-}
-
 #[test]
 fn test_print_line() {
     for i in 0..10 {
@@ -479,11 +444,4 @@ fn test_print_line() {
         stdout().flush().ok();
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
-}
-
-#[tokio::test]
-async fn test_list_obj() -> Result<(), Box<dyn Error>> {
-    let client = create_client();
-    list_object(&client, "s3://chengxuguang-bucket/s3-client-test/").await?;
-    Ok(())
 }
