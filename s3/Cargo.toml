@@ -12,4 +12,5 @@ home = "0.5.3"
 aws-smithy-http = {version = "0.48.0"}
 aws-smithy-types = {version = "0.48.0"}
 walkdir = {version = "2.3.2"}
+futures = "0.3.24"
 oss-client-rs-conf = {path= "../config"}

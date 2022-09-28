@@ -4,11 +4,13 @@ use aws_sdk_s3::model::{CompletedMultipartUpload, CompletedPart};
 use aws_sdk_s3::{Client, Config, Credentials, Endpoint, Region};
 use aws_smithy_http::byte_stream::{ByteStream, Length};
 use aws_smithy_types::date_time::Format;
+use futures::future::join_all;
 use oss_client_rs_conf::config;
 use std::collections::HashSet;
 use std::error::Error;
 use std::io::{stdout, Write};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use walkdir::WalkDir;
 
 const MB: u64 = 1024 * 1024;
@@ -164,7 +166,7 @@ pub async fn mutl_upload_v2(
     let mut part_size: u64 = CHUNK_SIZE;
     let mut upload_id = String::from("");
     #[allow(unused_assignments)]
-    let mut upload_size: u64 = 0;
+    let upload_size = Arc::new(Mutex::new(0));
     // 查看所有分片任务中的part
     for mult_part_upload in list_mult_part_uploads.uploads().unwrap_or_default().iter() {
         let list_parts = client
@@ -258,8 +260,10 @@ pub async fn mutl_upload_v2(
     for part in &upload_parts {
         upload_patrs_num.insert(part.part_number());
     }
-    upload_size = upload_patrs_num.len() as u64 * part_size;
 
+    *(upload_size.lock().unwrap()) = upload_patrs_num.len() as u64 * part_size;
+
+    let mut futures = vec![];
     for chunk_index in 0..chunk_count {
         let this_chunk = if chunk_count - 1 == chunk_index {
             size_of_last_chunk
@@ -287,22 +291,35 @@ pub async fn mutl_upload_v2(
             .upload_id(&upload_id)
             .body(stream)
             .part_number(part_number)
-            .send()
-            .await?;
-        upload_parts.push(
+            .send();
+
+        let _upload_size = Arc::clone(&upload_size);
+        let func = |part_number, this_chunk, total_size: String| async move {
+            let res = upload_part_res.await;
+
+            {
+                let mut _size = _upload_size.lock().unwrap();
+                *(_size) += this_chunk;
+                print!(
+                    "\rCompleted {}/{}",
+                    get_size_in_nice(*(_size) as u64),
+                    total_size
+                );
+                stdout().flush().ok();
+            }
+
             CompletedPart::builder()
-                .e_tag(upload_part_res.e_tag.unwrap_or_default())
+                .e_tag(res.unwrap().e_tag.unwrap_or_default())
                 .part_number(part_number)
-                .build(),
-        );
-        upload_size += this_chunk;
-        print!(
-            "\rCpmpleted {}/{}",
-            &get_size_in_nice(upload_size),
-            &total_size
-        );
-        stdout().flush().ok();
+                .build()
+        };
+        futures.push(func(part_number, this_chunk, total_size.clone()));
     }
+
+    let _parts = join_all(futures).await;
+
+    upload_parts = [upload_parts, _parts].concat();
+
     //对upload_parts排序
     upload_parts.sort_by_key(|key| key.part_number());
     // 生成CompletedMultipartUpload对象
@@ -376,30 +393,6 @@ pub async fn sync_dir(
     Ok(())
 }
 
-#[tokio::test]
-async fn test_sync_dir() -> Result<(), Box<dyn Error>> {
-    let client = &create_client();
-    sync_dir(
-        client,
-        "/home/chengxuguang/code/rust/oss-client-rs/target/release",
-        "s3://chengxuguang-bucket/s3-client-test/sync-test",
-    )
-    .await?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_get_obj() -> Result<(), Box<dyn Error>> {
-    let client = &create_client();
-    sync_dir(
-        client,
-        "/home/chengxuguang/code/rust/oss-client-rs",
-        "s3://chengxuguang-bucket/s3-client-test/sync-test/",
-    )
-    .await?;
-    Ok(())
-}
-
 fn path_deal(src: &str, target: &str) -> (String, String) {
     let src_path = Path::new(src);
     if !src_path.exists() {
@@ -444,18 +437,6 @@ fn parse_s3_url_test() {
     assert_eq!(key, "prefix1/prefix2/aaa.txt".to_string());
 }
 
-#[tokio::test]
-async fn test_mult_upload() -> Result<(), Box<dyn Error>> {
-    let client = create_client();
-    mutl_upload_v2(
-        &client,
-        "/home/chengxuguang/code/rust/oss-client-rs/target/release/s3-client-rs",
-        "s3://chengxuguang-bucket/s3-client-test/",
-    )
-    .await?;
-    Ok(())
-}
-
 #[test]
 fn test_print_line() {
     for i in 0..10 {
@@ -463,11 +444,4 @@ fn test_print_line() {
         stdout().flush().ok();
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
-}
-
-#[tokio::test]
-async fn test_list_obj() -> Result<(), Box<dyn Error>> {
-    let client = create_client();
-    list_object(&client, "s3://chengxuguang-bucket/s3-client-test/").await?;
-    Ok(())
 }
