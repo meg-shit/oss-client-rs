@@ -293,23 +293,26 @@ pub async fn mutl_upload_v2(
 
         let func = |part_number, this_chunk, total_size: String| async move {
             let res = upload_part_res.await;
-            CompletedPart::builder()
-                .e_tag(res.unwrap().e_tag.unwrap_or_default())
-                .part_number(part_number)
-                .build();
 
             upload_size += this_chunk;
             print!(
-                "\rCpmpleted {}/{}",
+                "\rCompleted {}/{}",
                 &get_size_in_nice(upload_size),
                 total_size
             );
             stdout().flush().ok();
+
+            CompletedPart::builder()
+                .e_tag(res.unwrap().e_tag.unwrap_or_default())
+                .part_number(part_number)
+                .build()
         };
         futures.push(func(part_number, this_chunk, total_size.clone()));
     }
 
-    join_all(futures).await;
+    let _parts = join_all(futures).await;
+
+    upload_parts = [upload_parts, _parts].concat();
 
     //对upload_parts排序
     upload_parts.sort_by_key(|key| key.part_number());

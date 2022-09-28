@@ -21,8 +21,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .subcommand(
             SubCommand::with_name("sync")
                 .about("sync files")
-                .arg(Arg::new("src_dir").required(true))
-                .arg(Arg::new("target_dir").required(true)),
+                .arg(Arg::new("src").required(true))
+                .arg(Arg::new("target").required(true)),
         )
         .get_matches();
 
