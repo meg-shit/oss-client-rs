@@ -27,4 +27,5 @@
 - [x] breakpoint continue
 - [x] progress display
 - [ ] network status display
-- [ ] sync feature: don't repeat upload
+- [x] sync feature: don't repeat upload
+- [ ] s3 provider mock for unit test
