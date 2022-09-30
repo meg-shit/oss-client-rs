@@ -10,7 +10,8 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::io::{stdout, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::Arc;
 use walkdir::WalkDir;
 
 const MB: u64 = 1024 * 1024;
@@ -65,89 +66,6 @@ pub async fn upload_object(client: &Client, src: &str, target: &str) -> Result<(
     Ok(())
 }
 
-pub async fn mutl_upload(client: &Client, src: &str, target: &str) -> Result<(), Box<dyn Error>> {
-    let (bucket, key) = path_deal(src, target);
-
-    // 创建分片请求
-    let upload_id = client
-        .create_multipart_upload()
-        .bucket(&bucket)
-        .key(&key)
-        .send()
-        .await?
-        .upload_id()
-        .unwrap()
-        .to_string();
-
-    let file_size = tokio::fs::metadata(src)
-        .await
-        .expect("it exists I swear")
-        .len();
-
-    let mut chunk_count = (file_size / CHUNK_SIZE) + 1;
-    let mut size_of_last_chunk = file_size % CHUNK_SIZE;
-    if size_of_last_chunk == 0 {
-        size_of_last_chunk = CHUNK_SIZE;
-        chunk_count -= 1;
-    }
-
-    if file_size == 0 {
-        panic!("Bad file size.");
-    }
-    if chunk_count > MAX_CHUNKS {
-        panic!("Too many chunks! Try increasing your chunk size.")
-    }
-
-    let mut upload_parts: Vec<CompletedPart> = Vec::new();
-
-    for chunk_index in 0..chunk_count {
-        let this_chunk = if chunk_count - 1 == chunk_index {
-            size_of_last_chunk
-        } else {
-            CHUNK_SIZE
-        };
-        let stream = ByteStream::read_from()
-            .path(src)
-            .offset(chunk_index * CHUNK_SIZE)
-            .length(Length::Exact(this_chunk))
-            .build()
-            .await
-            .unwrap();
-        //Chunk index needs to start at 0, but part numbers start at 1.
-        let part_number = (chunk_index as i32) + 1;
-        // snippet-start:[rust.example_code.s3.upload_part]
-        let upload_part_res = client
-            .upload_part()
-            .key(&key)
-            .bucket(&bucket)
-            .upload_id(&upload_id)
-            .body(stream)
-            .part_number(part_number)
-            .send()
-            .await?;
-        upload_parts.push(
-            CompletedPart::builder()
-                .e_tag(upload_part_res.e_tag.unwrap_or_default())
-                .part_number(part_number)
-                .build(),
-        );
-    }
-
-    let completed_multipart_upload: CompletedMultipartUpload = CompletedMultipartUpload::builder()
-        .set_parts(Some(upload_parts))
-        .build();
-
-    let _complete_multipart_upload_res = client
-        .complete_multipart_upload()
-        .bucket(&bucket)
-        .key(&key)
-        .multipart_upload(completed_multipart_upload)
-        .upload_id(upload_id)
-        .send()
-        .await?;
-    Ok(())
-}
-
 pub async fn mutl_upload_v2(
     client: &Client,
     src: &str,
@@ -166,7 +84,7 @@ pub async fn mutl_upload_v2(
     let mut part_size: u64 = CHUNK_SIZE;
     let mut upload_id = String::from("");
     #[allow(unused_assignments)]
-    let upload_size = Arc::new(Mutex::new(0));
+    let upload_size = Arc::new(AtomicI32::new(0));
     // 查看所有分片任务中的part
     for mult_part_upload in list_mult_part_uploads.uploads().unwrap_or_default().iter() {
         let list_parts = client
@@ -261,7 +179,10 @@ pub async fn mutl_upload_v2(
         upload_patrs_num.insert(part.part_number());
     }
 
-    *(upload_size.lock().unwrap()) = upload_patrs_num.len() as u64 * part_size;
+    upload_size.fetch_add(
+        (upload_patrs_num.len() * part_size as usize) as i32,
+        Ordering::SeqCst,
+    );
 
     let mut futures = vec![];
     for chunk_index in 0..chunk_count {
@@ -298,11 +219,10 @@ pub async fn mutl_upload_v2(
             let res = upload_part_res.await;
 
             {
-                let mut _size = _upload_size.lock().unwrap();
-                *(_size) += this_chunk;
+                let mut _size = _upload_size.fetch_add(this_chunk, Ordering::SeqCst);
                 print!(
                     "\rCompleted {}/{}",
-                    get_size_in_nice(*(_size) as u64),
+                    get_size_in_nice(_upload_size.load(Ordering::SeqCst) as u64),
                     total_size
                 );
                 stdout().flush().ok();
@@ -313,7 +233,7 @@ pub async fn mutl_upload_v2(
                 .part_number(part_number)
                 .build()
         };
-        futures.push(func(part_number, this_chunk, total_size.clone()));
+        futures.push(func(part_number, this_chunk as i32, total_size.clone()));
     }
 
     let _parts = join_all(futures).await;
@@ -335,7 +255,7 @@ pub async fn mutl_upload_v2(
         .upload_id(upload_id)
         .send()
         .await?;
-    println!("upload {:#} to s3://{:#}/{:#}", src, bucket, key);
+    println!("\rupload {:#} to s3://{:#}/{:#}", src, bucket, key);
     Ok(())
 }
 
