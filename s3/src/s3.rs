@@ -10,7 +10,8 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::io::{stdout, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::Arc;
 use walkdir::WalkDir;
 
 const MB: u64 = 1024 * 1024;
@@ -166,7 +167,7 @@ pub async fn mutl_upload_v2(
     let mut part_size: u64 = CHUNK_SIZE;
     let mut upload_id = String::from("");
     #[allow(unused_assignments)]
-    let upload_size = Arc::new(Mutex::new(0));
+    let upload_size = Arc::new(AtomicI32::new(0));
     // 查看所有分片任务中的part
     for mult_part_upload in list_mult_part_uploads.uploads().unwrap_or_default().iter() {
         let list_parts = client
@@ -261,7 +262,10 @@ pub async fn mutl_upload_v2(
         upload_patrs_num.insert(part.part_number());
     }
 
-    *(upload_size.lock().unwrap()) = upload_patrs_num.len() as u64 * part_size;
+    upload_size.fetch_add(
+        (upload_patrs_num.len() * part_size as usize) as i32,
+        Ordering::SeqCst,
+    );
 
     let mut futures = vec![];
     for chunk_index in 0..chunk_count {
@@ -298,11 +302,10 @@ pub async fn mutl_upload_v2(
             let res = upload_part_res.await;
 
             {
-                let mut _size = _upload_size.lock().unwrap();
-                *(_size) += this_chunk;
+                let mut _size = _upload_size.fetch_add(this_chunk, Ordering::SeqCst);
                 print!(
                     "\rCompleted {}/{}",
-                    get_size_in_nice(*(_size) as u64),
+                    get_size_in_nice(_upload_size.load(Ordering::SeqCst) as u64),
                     total_size
                 );
                 stdout().flush().ok();
@@ -313,7 +316,7 @@ pub async fn mutl_upload_v2(
                 .part_number(part_number)
                 .build()
         };
-        futures.push(func(part_number, this_chunk, total_size.clone()));
+        futures.push(func(part_number, this_chunk as i32, total_size.clone()));
     }
 
     let _parts = join_all(futures).await;
