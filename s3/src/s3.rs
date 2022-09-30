@@ -66,89 +66,6 @@ pub async fn upload_object(client: &Client, src: &str, target: &str) -> Result<(
     Ok(())
 }
 
-pub async fn mutl_upload(client: &Client, src: &str, target: &str) -> Result<(), Box<dyn Error>> {
-    let (bucket, key) = path_deal(src, target);
-
-    // 创建分片请求
-    let upload_id = client
-        .create_multipart_upload()
-        .bucket(&bucket)
-        .key(&key)
-        .send()
-        .await?
-        .upload_id()
-        .unwrap()
-        .to_string();
-
-    let file_size = tokio::fs::metadata(src)
-        .await
-        .expect("it exists I swear")
-        .len();
-
-    let mut chunk_count = (file_size / CHUNK_SIZE) + 1;
-    let mut size_of_last_chunk = file_size % CHUNK_SIZE;
-    if size_of_last_chunk == 0 {
-        size_of_last_chunk = CHUNK_SIZE;
-        chunk_count -= 1;
-    }
-
-    if file_size == 0 {
-        panic!("Bad file size.");
-    }
-    if chunk_count > MAX_CHUNKS {
-        panic!("Too many chunks! Try increasing your chunk size.")
-    }
-
-    let mut upload_parts: Vec<CompletedPart> = Vec::new();
-
-    for chunk_index in 0..chunk_count {
-        let this_chunk = if chunk_count - 1 == chunk_index {
-            size_of_last_chunk
-        } else {
-            CHUNK_SIZE
-        };
-        let stream = ByteStream::read_from()
-            .path(src)
-            .offset(chunk_index * CHUNK_SIZE)
-            .length(Length::Exact(this_chunk))
-            .build()
-            .await
-            .unwrap();
-        //Chunk index needs to start at 0, but part numbers start at 1.
-        let part_number = (chunk_index as i32) + 1;
-        // snippet-start:[rust.example_code.s3.upload_part]
-        let upload_part_res = client
-            .upload_part()
-            .key(&key)
-            .bucket(&bucket)
-            .upload_id(&upload_id)
-            .body(stream)
-            .part_number(part_number)
-            .send()
-            .await?;
-        upload_parts.push(
-            CompletedPart::builder()
-                .e_tag(upload_part_res.e_tag.unwrap_or_default())
-                .part_number(part_number)
-                .build(),
-        );
-    }
-
-    let completed_multipart_upload: CompletedMultipartUpload = CompletedMultipartUpload::builder()
-        .set_parts(Some(upload_parts))
-        .build();
-
-    let _complete_multipart_upload_res = client
-        .complete_multipart_upload()
-        .bucket(&bucket)
-        .key(&key)
-        .multipart_upload(completed_multipart_upload)
-        .upload_id(upload_id)
-        .send()
-        .await?;
-    Ok(())
-}
-
 pub async fn mutl_upload_v2(
     client: &Client,
     src: &str,
@@ -338,7 +255,7 @@ pub async fn mutl_upload_v2(
         .upload_id(upload_id)
         .send()
         .await?;
-    println!("upload {:#} to s3://{:#}/{:#}", src, bucket, key);
+    println!("\rupload {:#} to s3://{:#}/{:#}", src, bucket, key);
     Ok(())
 }
 
